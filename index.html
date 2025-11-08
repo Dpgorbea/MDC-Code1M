@@ -1,104 +1,320 @@
 <!doctype html>
 <html>
 <head>
-<meta charset="utf-8">
-<title>MDC Tone Watcher</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8" />
+<title>MDC Tone Watcher — 3s Learn + Sustained Match</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-  body{font-family:system-ui,Segoe UI,Roboto;margin:16px}
-  button{padding:12px 16px;margin:6px 8px 6px 0}
-  #log{white-space:pre-wrap;background:#111;color:#0f0;padding:10px;border-radius:6px;min-height:96px}
+  :root { --bg:#0b0b0b; --fg:#e8e8e8; --mut:#9aa3a7; --ok:#31d158; --warn:#ffd44a; --bad:#ff6b6b; --card:#151515; }
+  html,body { background:var(--bg); color:var(--fg); font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial; margin:0; }
+  .wrap { max-width:760px; margin:24px auto; padding:16px; }
+  h1 { font-size:20px; margin:0 0 8px; }
+  p, label, small { color:var(--mut); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; }
+  button, select, input[type="text"] {
+    background:var(--card); color:var(--fg); border:1px solid #2a2a2a; border-radius:10px; padding:10px 14px; font-size:15px;
+  }
+  button { cursor:pointer; }
+  button:disabled { opacity:.55; cursor:not-allowed; }
+  .card { background:var(--card); border:1px solid #222; border-radius:12px; padding:12px; margin:12px 0; }
+  #log { white-space:pre-wrap; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+         background:#0d0d0d; color:#8ff58b; border-radius:10px; padding:10px; min-height:120px; }
+  .pill { display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; border:1px solid #2a2a2a; background:#131313; }
+  .ok { color:var(--ok); border-color:#1f5; }
+  .warn { color:var(--warn); border-color:#fc4; }
+  .bad { color:var(--bad); border-color:#f66; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:640px){ .grid { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
-<h2>MDC Tone Watcher</h2>
-<p>Allow mic. Tap <b>Start Listening</b>, then <b>Record Tone Sample (learn)</b> once. Keep this tab visible.</p>
-<button id="start">Start Listening</button>
-<button id="stop" disabled>Stop</button>
-<button id="learn">Record Tone Sample (learn)</button>
-<button id="test">Test Alert</button>
-<label style="display:block;margin-top:8px">Sensitivity
-  <input id="sens" type="range" min="0.02" max="0.5" step="0.01" value="0.12">
-</label>
-<div id="log">Status: idle</div>
+<div class="wrap">
+  <h1>MDC Tone Watcher</h1>
+  <p>Train it once with your patrol car’s 3-second alert tone. It will only trigger when it hears a sustained match. Keep this tab visible; allow mic.</p>
+
+  <!-- ===== CONFIGURE YOUR NOTIFICATION METHOD ===== -->
+  <div class="card">
+    <b>Notification Method</b>
+    <p>Choose ONE method and fill the fields.</p>
+    <div class="grid">
+      <div>
+        <label><input type="radio" name="method" value="IFTTT" checked> IFTTT Webhook</label>
+        <input id="iftttUrl" type="text" placeholder="https://maker.ifttt.com/trigger/MDC_Call_Alert/with/key/cSJ4VM9aezFFbRFOgHGDv4" style="width:100%; margin-top:6px;">
+      </div>
+      <div>
+        <label><input type="radio" name="method" value="PUSHOVER"> Pushover (fast, $4.99 one-time)</label>
+        <input id="poToken" type="text" placeholder="Pushover API token" style="width:100%; margin-top:6px;">
+        <input id="poUser"  type="text" placeholder="Pushover user key"  style="width:100%; margin-top:6px;">
+      </div>
+      <div>
+        <label><input type="radio" name="method" value="TELEGRAM"> Telegram Bot (free)</label>
+        <input id="tgToken" type="text" placeholder="Bot token (e.g. 1234:ABC...)" style="width:100%; margin-top:6px;">
+        <input id="tgChat"  type="text" placeholder="Chat ID (your ID)" style="width:100%; margin-top:6px;">
+      </div>
+      <div>
+        <label><input type="radio" name="method" value="NONE"> Local alert only (beep + vibrate)</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== CONTROLS ===== -->
+  <div class="card">
+    <div class="row">
+      <button id="start">Start Listening</button>
+      <button id="stop" disabled>Stop</button>
+      <button id="learn" title="Capture ~3 seconds of the alert tone">Record Tone Sample (learn)</button>
+      <button id="test">Test Alert</button>
+    </div>
+    <div class="row">
+      <label>Sensitivity
+        <input id="sens" type="range" min="0.02" max="0.5" step="0.01" value="0.12">
+      </label>
+      <label>Mic:
+        <select id="micSelect"></select>
+      </label>
+      <span id="status" class="pill warn">idle</span>
+    </div>
+    <small>Tip: keep the phone/computer near the speaker that plays the CAD alert. Tab must stay visible. Screen wake-lock is automatic while listening.</small>
+  </div>
+
+  <!-- ===== LOG ===== -->
+  <div class="card">
+    <div id="log">Log ready.</div>
+  </div>
+</div>
 
 <script>
-const WEBHOOK_URL = 'https://maker.ifttt.com/trigger/MDC_Call_Alert/with/key/cSJ4VM9aezFFbRFOgHGDv4';
+/*** ---------- UTILITIES ---------- ***/
 const logEl = document.getElementById('log');
-const sens = document.getElementById('sens');
-const btnStart = document.getElementById('start');
-const btnStop = document.getElementById('stop');
-const btnLearn = document.getElementById('learn');
-const btnTest = document.getElementById('test');
+const statusEl = document.getElementById('status');
+const sensEl = document.getElementById('sens');
+const micSelect = document.getElementById('micSelect');
+const startBtn = document.getElementById('start');
+const stopBtn  = document.getElementById('stop');
+const learnBtn = document.getElementById('learn');
+const testBtn  = document.getElementById('test');
 
-let ctx, analyser, mic, data, listening=false, learned=null, wakeLock=null;
-const log = s => logEl.textContent = new Date().toLocaleTimeString()+" — "+s+"\n"+logEl.textContent;
+const iftttUrl = document.getElementById('iftttUrl');
+const poToken  = document.getElementById('poToken');
+const poUser   = document.getElementById('poUser');
+const tgToken  = document.getElementById('tgToken');
+const tgChat   = document.getElementById('tgChat');
 
-async function wake(on){
+const methodRadios = [...document.querySelectorAll('input[name="method"])];
+const getMethod = ()=> methodRadios.find(r=>r.checked)?.value || 'IFTTT';
+
+function log(s){
+  const line = new Date().toLocaleTimeString() + " — " + s + "\n";
+  logEl.textContent = line + logEl.textContent;
+}
+function setStatus(txt, cls='warn'){
+  statusEl.textContent = txt;
+  statusEl.className = 'pill ' + cls;
+}
+
+/*** ---------- AUDIO SETUP ---------- ***/
+let ctx, analyser, micNode, stream, wakeLock=null;
+let listening=false, cooldown=false;
+let learnedFrames = null;      // array of spectra (~3s)
+let frameWindow = [];          // rolling similarities
+let lastLoopTs = 0;
+
+// Detection parameters
+const FRAME_MS   = 80;         // ~12.5 fps
+const LEARN_MS   = 3000;       // learn ~3s
+const WINDOW_MS  = 2400;       // require sustained match over last ~2.4s
+const MAX_WINDOW = Math.floor(WINDOW_MS / FRAME_MS);
+let   MIN_ENERGY = 0.08;       // ignore very quiet frames
+
+function toLinear(db){ return Math.max(0,(db+140)/140); }
+function normalize(arr){
+  const out = new Float32Array(arr.length);
+  let m = 0; for(let i=0;i<arr.length;i++) if(arr[i]>m) m=arr[i];
+  if(m===0) m=1;
+  for(let i=0;i<arr.length;i++) out[i] = arr[i]/m;
+  return out;
+}
+function cosSim(a,b){
+  let d=0,na=0,nb=0; for(let i=0;i<a.length;i++){ d+=a[i]*b[i]; na+=a[i]*a[i]; nb+=b[i]*b[i]; }
+  return d / (Math.sqrt(na)*Math.sqrt(nb) + 1e-9);
+}
+function avg(arr){ if(!arr.length) return 0; let s=0; for(const x of arr) s+=x; return s/arr.length; }
+
+async function requestWakeLock(){
   try{
-    if(on && 'wakeLock' in navigator){ wakeLock = await navigator.wakeLock.request('screen'); log('WakeLock ON'); }
-    if(!on && wakeLock){ await wakeLock.release(); wakeLock=null; log('WakeLock OFF'); }
+    if('wakeLock' in navigator){ wakeLock = await navigator.wakeLock.request('screen'); log('WakeLock ON'); }
   }catch(e){ log('WakeLock err: '+e.message); }
 }
+async function releaseWakeLock(){ try{ if(wakeLock){ await wakeLock.release(); wakeLock=null; log('WakeLock OFF'); } }catch(e){} }
 
-function beep(){
-  navigator.vibrate && navigator.vibrate([200,80,200,80,400]);
-  const ac=new (window.AudioContext||window.webkitAudioContext)(), o=ac.createOscillator(), g=ac.createGain();
-  o.connect(g); g.connect(ac.destination); o.type='sine'; o.frequency.value=880; g.gain.value=0.0001;
-  o.start(); g.gain.linearRampToValueAtTime(0.8, ac.currentTime+0.02); g.gain.linearRampToValueAtTime(0.0001, ac.currentTime+0.6); o.stop(ac.currentTime+0.7);
+function localAlert(){
+  navigator.vibrate && navigator.vibrate([240,80,240,80,500]);
+  const ac = new (window.AudioContext||window.webkitAudioContext)();
+  const o  = ac.createOscillator();
+  const g  = ac.createGain();
+  o.connect(g); g.connect(ac.destination);
+  o.type='sine'; o.frequency.value=880;
+  g.gain.value=0.0001; o.start();
+  g.gain.linearRampToValueAtTime(0.85, ac.currentTime+0.02);
+  g.gain.linearRampToValueAtTime(0.0001, ac.currentTime+0.7);
+  o.stop(ac.currentTime+0.72);
 }
-async function webhook(){
-  if(!WEBHOOK_URL) return log('No webhook set (local alert only).');
-  try{ await fetch(WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value1:'MDC tone detected',t:new Date().toISOString()})}); log('Webhook sent'); }
-  catch(e){ log('Webhook failed: '+e.message); }
-}
-function toLinear(db){ return Math.max(0,(db+140)/140); }
-function normalize(arr){ const out=new Float32Array(arr.length); let m=0; for(let i=0;i<arr.length;i++){ if(arr[i]>m)m=arr[i]; } if(m===0)m=1; for(let i=0;i<arr.length;i++) out[i]=arr[i]/m; return out; }
-function cosSim(a,b){ let d=0,na=0,nb=0; for(let i=0;i<a.length;i++){ d+=a[i]*b[i]; na+=a[i]*a[i]; nb+=b[i]*b[i]; } return d/(Math.sqrt(na)*Math.sqrt(nb)+1e-9); }
 
-function loop(){
-  if(!listening) return;
-  const buf=new Float32Array(analyser.frequencyBinCount);
-  analyser.getFloatFrequencyData(buf);
-  for(let i=0;i<buf.length;i++) buf[i]=toLinear(buf[i]);
-  const spec=normalize(buf);
-  if(learned){
-    const sim=cosSim(spec, learned);
-    const thresh = 1 - parseFloat(sens.value); // move slider right to make it easier
-    if(sim>thresh){ log('MATCH sim='+sim.toFixed(3)); beep(); webhook(); listening=false; setTimeout(()=>{listening=true; log('Resumed'); loop();},3000); return; }
-  }else{
-    // crude loudness fallback
-    let peak=0; for(let i=0;i<spec.length;i++) if(spec[i]>peak) peak=spec[i];
-    if(peak>0.75){ log('Loud event peak='+peak.toFixed(2)); beep(); webhook(); listening=false; setTimeout(()=>{listening=true; log('Resumed'); loop();},3000); return; }
+/*** ---------- WEBHOOKS ---------- ***/
+async function sendNotification(){
+  const method = getMethod();
+  try{
+    if(method==='IFTTT'){
+      const url = (iftttUrl.value||'').trim();
+      if(!url){ log('IFTTT URL empty (skipping remote push).'); localAlert(); return; }
+      await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ value1:'MDC tone detected', t:new Date().toISOString() })});
+      log('IFTTT webhook sent.');
+    } else if(method==='PUSHOVER'){
+      const token = poToken.value.trim(), user = poUser.value.trim();
+      if(!token || !user){ log('Pushover token/user empty.'); localAlert(); return; }
+      await fetch('https://api.pushover.net/1/messages.json', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token, user, message:'🚔 New call assigned — check MDC' })});
+      log('Pushover sent.');
+    } else if(method==='TELEGRAM'){
+      const token = tgToken.value.trim(), chat = tgChat.value.trim();
+      if(!token || !chat){ log('Telegram token/chat empty.'); localAlert(); return; }
+      const url = `https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`+
+                  `?chat_id=${encodeURIComponent(chat)}&text=${encodeURIComponent('🚔 New call assigned — check MDC')}`;
+      await fetch(url);
+      log('Telegram sent.');
+    } else {
+      log('Local alert only.');
+    }
+  } catch(e){
+    log('Notify error: '+e.message);
   }
-  requestAnimationFrame(loop);
+  localAlert();
 }
 
-btnStart.onclick = async ()=>{
+/*** ---------- DEVICE PICKER ---------- ***/
+async function populateMics(){
+  try{
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d=>d.kind==='audioinput');
+    micSelect.innerHTML = '';
+    for(const d of mics){
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Mic ${micSelect.length+1}`;
+      micSelect.appendChild(opt);
+    }
+  }catch(e){ log('enumerateDevices error: '+e.message); }
+}
+
+/*** ---------- LISTEN / LEARN / LOOP ---------- ***/
+async function startListening(){
   if(listening) return;
   try{
     ctx = new (window.AudioContext||window.webkitAudioContext)();
-    const stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1}});
-    mic = ctx.createMediaStreamSource(stream);
-    analyser = ctx.createAnalyser(); analyser.fftSize=2048; analyser.smoothingTimeConstant=0.4;
-    mic.connect(analyser); data=new Float32Array(analyser.frequencyBinCount);
-    listening=true; btnStart.disabled=true; btnStop.disabled=false; log('Listening…'); await wake(true); loop();
-  }catch(e){ log('Mic error: '+e.message); }
-};
-btnStop.onclick = async ()=>{ listening=false; btnStart.disabled=false; btnStop.disabled=true; await wake(false); log('Stopped'); };
-btnLearn.onclick = ()=>{
-  if(!analyser) return log('Start listening first.');
-  log('Learning… play a single clean alert near mic (≈1s).');
-  const frames=[], take=()=>{
-    const f=new Float32Array(analyser.frequencyBinCount);
-    analyser.getFloatFrequencyData(f); for(let i=0;i<f.length;i++) f[i]=toLinear(f[i]);
-    frames.push(f); if(frames.length<12) return setTimeout(take,80);
-    const avg=new Float32Array(frames[0].length);
-    for(let i=0;i<avg.length;i++){ let s=0; for(const fr of frames) s+=fr[i]; avg[i]=s/frames.length; }
-    learned=normalize(avg); log('Tone learned.');
-  }; take();
-};
-btnTest.onclick = ()=>{ beep(); webhook(); log('Test fired'); };
+    const constraints = { audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false } };
+    if(micSelect.value){ constraints.audio.deviceId = { exact: micSelect.value }; }
+    stream  = await navigator.mediaDevices.getUserMedia(constraints);
+    micNode = ctx.createMediaStreamSource(stream);
+    analyser = ctx.createAnalyser(); analyser.fftSize = 2048; analyser.smoothingTimeConstant = 0.4;
+    micNode.connect(analyser);
+    listening = true; startBtn.disabled=true; stopBtn.disabled=false;
+    setStatus('listening', 'ok'); log('Listening…');
+    await requestWakeLock();
+    detectLoop();
+  }catch(e){
+    log('Mic error: '+e.message);
+    setStatus('mic error', 'bad');
+  }
+}
+async function stopListening(){
+  listening=false; startBtn.disabled=false; stopBtn.disabled=true;
+  try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch(e){}
+  try{ ctx && ctx.close(); }catch(e){}
+  await releaseWakeLock();
+  setStatus('stopped', 'warn'); log('Stopped.');
+}
+
+function learnTone(){
+  if(!analyser){ log('Start listening first.'); return; }
+  frameWindow.length = 0;
+  learnedFrames = null;
+  log('Learning ~3s… play ONE full alert now.');
+  const frames = [];
+  const start  = performance.now();
+  (function collect(){
+    const fdb = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(fdb);
+    for(let i=0;i<fdb.length;i++) fdb[i] = toLinear(fdb[i]);
+    frames.push( normalize(fdb) );
+    if(performance.now() - start < LEARN_MS){
+      setTimeout(collect, FRAME_MS);
+    } else {
+      learnedFrames = frames;
+      // precompute average spectrum
+      const avgSpec = new Float32Array(learnedFrames[0].length);
+      for(let i=0;i<avgSpec.length;i++){ let s=0; for(const fr of learnedFrames) s+=fr[i]; avgSpec[i]=s/learnedFrames.length; }
+      learnedFrames.avg = normalize(avgSpec);
+      log(`Tone learned with ${frames.length} frames (~${(frames.length*FRAME_MS/1000).toFixed(1)}s).`);
+    }
+  })();
+}
+
+function detectLoop(){
+  if(!listening) return;
+  const now = performance.now();
+  if(now - lastLoopTs < FRAME_MS){ return requestAnimationFrame(detectLoop); }
+  lastLoopTs = now;
+
+  const fdb = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(fdb);
+  for(let i=0;i<fdb.length;i++) fdb[i] = toLinear(fdb[i]);
+  const spec = normalize(fdb);
+
+  // Energy gate
+  let energy = 0; for(let i=0;i<spec.length;i++) energy += spec[i]; energy /= spec.length;
+  if(energy < MIN_ENERGY){
+    frameWindow.push(0);
+  } else if(learnedFrames && learnedFrames.avg){
+    const sim = cosSim(spec, learnedFrames.avg);
+    frameWindow.push(sim);
+  } else {
+    frameWindow.push(0);
+  }
+  if(frameWindow.length > MAX_WINDOW) frameWindow.shift();
+
+  // Threshold (stricter by default; slider loosens slightly)
+  const ease = parseFloat(sensEl.value);          // 0.02..0.5
+  const threshold = 0.95 - (ease * 0.25);        // ~0.95 default, down to ~0.825 if fully loose
+  const winAvg = avg(frameWindow);
+
+  if(!cooldown && learnedFrames && winAvg >= threshold){
+    log(`MATCH sustained avg=${winAvg.toFixed(3)} (thr=${threshold.toFixed(3)})`);
+    setStatus('alert', 'bad');
+    cooldown = true; listening = false;
+    sendNotification();
+    // cooldown then resume
+    setTimeout(()=>{ cooldown=false; listening=true; frameWindow.length=0; setStatus('listening','ok'); log('Resumed.'); }, 2500);
+  }
+
+  requestAnimationFrame(detectLoop);
+}
+
+/*** ---------- EVENTS ---------- ***/
+startBtn.onclick = startListening;
+stopBtn.onclick  = stopListening;
+learnBtn.onclick = learnTone;
+testBtn.onclick  = ()=>{ log('Test fired.'); setStatus('test','ok'); sendNotification(); };
+
+(async function init(){
+  setStatus('idle','warn');
+  // ask for temp mic to list devices (some browsers require a prior permission)
+  try{
+    await navigator.mediaDevices.getUserMedia({audio:true});
+  }catch(e){ /* ignore here; user will be prompted on Start */ }
+  await populateMics();
+  log('Ready. Choose mic (if needed), press Start, then Record Tone Sample and play ONE full alert (~3s).');
+})();
 </script>
 </body>
 </html>
