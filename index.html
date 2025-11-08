@@ -1,196 +1,566 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<title>MDC Tone Watcher — simple 3s learn</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MDC Tone Watcher</title>
 <style>
-  body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;margin:16px}
-  button{padding:10px 14px;margin:6px 8px 6px 0;font-size:15px}
-  #log{white-space:pre-wrap;background:#111;color:#0f0;padding:10px;border-radius:6px;min-height:110px}
-  label{display:inline-block;margin:6px 12px 6px 0}
+  :root {
+    color-scheme: dark;
+    font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Roboto", sans-serif;
+    background:#0a0a0f;
+    color:#f0f4ff;
+  }
+  body {
+    margin: 0;
+    padding: 18px 16px 48px;
+    background: linear-gradient(180deg,#0a0a0f 0%,#0c111f 100%);
+  }
+  h1 {
+    font-size: 1.5rem;
+    margin: 0 0 12px;
+  }
+  p.instructions {
+    font-size: 0.95rem;
+    line-height: 1.45;
+    color:#b9c2de;
+    margin: 0 0 16px;
+  }
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  label {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color:#8ea3d1;
+  }
+  input[type="text"] {
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid #1f2a44;
+    background:#0f172a;
+    color:#e8eeff;
+    font-size: 1rem;
+  }
+  input[type="text"]::placeholder {
+    color:#5a6788;
+  }
+  .button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  button {
+    flex: 1 1 45%;
+    min-width: 150px;
+    padding: 12px 14px;
+    border-radius: 999px;
+    border: none;
+    background:#1f2a44;
+    color:#e8eeff;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    box-shadow: 0 2px 6px rgba(7,12,22,0.5);
+  }
+  button:disabled {
+    opacity: 0.45;
+  }
+  button.primary {
+    background: linear-gradient(135deg,#2f7bff,#5c48f2);
+  }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  input[type="range"] {
+    flex: 1;
+  }
+  .slider-value {
+    min-width: 60px;
+    text-align: right;
+    font-family: "Roboto Mono", monospace;
+    color:#c6d4ff;
+    font-size: 0.9rem;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin: 8px 0 2px;
+  }
+  .status-idle { background:#29324d; color:#c6d4ff; }
+  .status-listening { background:#184b2d; color:#8df5ba; }
+  .status-alert { background:#5e1224; color:#ff9eb1; }
+  .status-stopped { background:#353b4d; color:#cfd5f1; }
+  .status-error { background:#5e2a12; color:#ffd9a6; }
+  #log {
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 12px;
+    background:#05070f;
+    border: 1px solid #1f2a44;
+    min-height: 160px;
+    max-height: 320px;
+    overflow-y: auto;
+    font-family: "Roboto Mono", monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  select {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #1f2a44;
+    background:#0f172a;
+    color:#e8eeff;
+    font-size: 0.95rem;
+  }
 </style>
 </head>
 <body>
-  <h2>MDC Tone Watcher</h2>
-  <p>Allow mic → Start Listening → <b>Record Tone Sample (learn)</b> while the full ~3s alert plays once. Keep this tab visible.</p>
+  <main class="controls">
+    <header>
+      <h1>MDC Tone Watcher</h1>
+      <p class="instructions">
+        Allow microphone access, press <strong>Start Listening</strong>, then use <strong>Record Tone Sample</strong> once while the full
+        ~3&nbsp;second alert plays. Keep this tab visible. The detector compares live audio to the learned tone and fires when a sustained match occurs.
+      </p>
+    </header>
 
-  <div>
-    <button id="start">Start Listening</button>
-    <button id="stop" disabled>Stop</button>
-    <button id="learn" title="Capture ~3 seconds of the alert tone">Record Tone Sample (learn)</button>
-    <button id="test">Test Alert</button>
-  </div>
+    <!-- Paste your webhook URL into this field before you start listening. -->
+    <div class="field">
+      <label for="webhook">Webhook URL</label>
+      <input id="webhook" type="text" inputmode="url" placeholder="https://maker.ifttt.com/trigger/..." autocomplete="off">
+    </div>
 
-  <label>Sensitivity
-    <input id="sens" type="range" min="0.02" max="0.5" step="0.01" value="0.10">
-  </label>
+    <div class="field" id="device-field" hidden>
+      <label for="device">Microphone</label>
+      <select id="device"></select>
+    </div>
 
-  <div id="log">Status: idle</div>
+    <div class="button-row">
+      <button id="start" class="primary">Start Listening</button>
+      <button id="stop" disabled>Stop</button>
+      <button id="learn">Record Tone Sample (learn)</button>
+      <button id="test">Test Alert</button>
+    </div>
+
+    <div class="field">
+      <label for="sensitivity">Sensitivity</label>
+      <div class="slider-row">
+        <input id="sensitivity" type="range" min="0.02" max="0.50" value="0.10" step="0.01">
+        <span class="slider-value" id="sens-display">0.10</span>
+      </div>
+      <small style="color:#6876a3;">Left = stricter (fewer alerts), Right = looser (more sensitive).</small>
+    </div>
+
+    <div>
+      <span id="status-pill" class="status-pill status-idle">Idle</span>
+    </div>
+
+    <pre id="log"></pre>
+  </main>
 
 <script>
-/*** === CONFIG: put your webhook URL here (IFTTT, Pushover endpoint via webhook relay, Telegram, etc.) === ***/
-const WEBHOOK_URL = 'https://maker.ifttt.com/trigger/MDC_Call_Alert/with/key/cSJ4VM9aezFFbRFOgHGDv4'; // e.g. https://maker.ifttt.com/trigger/mdc_call_alert/with/key/XXXX
+(() => {
+  'use strict';
 
-/*** === Minimal code: same behavior as original + only 2 changes (3s learn + sustained match) === ***/
-const logEl = document.getElementById('log'), sensEl = document.getElementById('sens');
-const btnStart = document.getElementById('start'), btnStop = document.getElementById('stop');
-const btnLearn = document.getElementById('learn'), btnTest = document.getElementById('test');
+  const webhookInput = document.getElementById('webhook');
+  const startBtn = document.getElementById('start');
+  const stopBtn = document.getElementById('stop');
+  const learnBtn = document.getElementById('learn');
+  const testBtn = document.getElementById('test');
+  const logEl = document.getElementById('log');
+  const statusPill = document.getElementById('status-pill');
+  const sensSlider = document.getElementById('sensitivity');
+  const sensDisplay = document.getElementById('sens-display');
+  const deviceSelect = document.getElementById('device');
+  const deviceField = document.getElementById('device-field');
 
-let ctx, analyser, mic, stream, listening=false, wakeLock=null;
+  const STATUS_CLASS = {
+    idle: 'status-idle',
+    listening: 'status-listening',
+    alert: 'status-alert',
+    stopped: 'status-stopped',
+    error: 'status-error'
+  };
 
-// Learned pattern (average spectrum of ~3s capture)
-let learnedAvg = null;
+  function timestamp() {
+    return new Date().toLocaleTimeString();
+  }
 
-// Rolling similarity window for sustained detection
-const FRAME_MS = 80;             // ~12.5 fps
-const LEARN_MS = 3000;           // capture ~3 seconds
-const WINDOW_MS = 2400;          // require ~2.4s sustained match
-const MAX_WINDOW = Math.floor(WINDOW_MS / FRAME_MS);
-const MIN_ENERGY = 0.10;         // gate: ignore quiet frames
-let lastTick = 0;
-let simWindow = [];
-let cooldown = false;
+  function log(message) {
+    const entry = `[${timestamp()}] ${message}\n`;
+    logEl.textContent = entry + logEl.textContent;
+  }
 
-function log(s){ logEl.textContent = new Date().toLocaleTimeString()+" — "+s+"\n"+logEl.textContent; }
+  function setStatus(kind, label) {
+    statusPill.textContent = label;
+    statusPill.className = `status-pill ${STATUS_CLASS[kind] ?? STATUS_CLASS.idle}`;
+  }
 
-function toLinear(db){ return Math.max(0,(db+140)/140); }
-function normalize(arr){
-  const out=new Float32Array(arr.length); let m=0;
-  for(let i=0;i<arr.length;i++){ if(arr[i]>m) m=arr[i]; }
-  if(m===0) m=1;
-  for(let i=0;i<arr.length;i++) out[i]=arr[i]/m;
-  return out;
-}
-function cosSim(a,b){
-  let d=0,na=0,nb=0;
-  for(let i=0;i<a.length;i++){ d+=a[i]*b[i]; na+=a[i]*a[i]; nb+=b[i]*b[i]; }
-  return d/(Math.sqrt(na)*Math.sqrt(nb)+1e-9);
-}
-function avg(a){ if(!a.length) return 0; let s=0; for(const x of a) s+=x; return s/a.length; }
+  sensSlider.addEventListener('input', () => {
+    sensDisplay.textContent = Number(sensSlider.value).toFixed(2);
+  });
 
-async function sendWebhook(){
-  if(!WEBHOOK_URL){ log('No webhook set (local alert only).'); beep(); return; }
-  try{
-    await fetch(WEBHOOK_URL, {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({value1:'MDC tone detected', t:new Date().toISOString()})});
-    log('Webhook sent');
-  } catch(e){ log('Webhook error: '+e.message); }
-  beep();
-}
+  let ctx = null;
+  let analyser = null;
+  let mediaStream = null;
+  let mediaSource = null;
+  let wakeLock = null;
+  let running = false;
+  let detectionEnabled = false;
+  let cooldownTimer = null;
 
-function beep(){
-  navigator.vibrate && navigator.vibrate([200,80,200,80,400]);
-  const ac = new (window.AudioContext||window.webkitAudioContext)();
-  const o = ac.createOscillator(), g = ac.createGain();
-  o.connect(g); g.connect(ac.destination);
-  o.type='sine'; o.frequency.value=880; g.gain.value=0.0001;
-  o.start();
-  g.gain.linearRampToValueAtTime(0.85, ac.currentTime+0.02);
-  g.gain.linearRampToValueAtTime(0.0001, ac.currentTime+0.7);
-  o.stop(ac.currentTime+0.72);
-}
+  // === Detection parameters (adjust here if needed) ===
+  const FRAME_MS = 80;      // Frame cadence (~12.5 fps)
+  const LEARN_MS = 3000;    // Capture window for learning (~3 seconds)
+  const WINDOW_MS = 2400;   // Rolling window duration for sustained match (~2.4 s)
+  const MIN_ENERGY = 0.10;  // Ignore frames quieter than this average energy
+  const MAX_WINDOW = Math.round(WINDOW_MS / FRAME_MS);
+  const BASE_THRESHOLD = 0.96; // Base cosine similarity threshold before sensitivity easing
 
-async function requestWakeLock(){
-  try{ if('wakeLock' in navigator){ wakeLock = await navigator.wakeLock.request('screen'); } }catch(e){ /* ignore */ }
-}
-async function releaseWakeLock(){ try{ if(wakeLock){ await wakeLock.release(); wakeLock=null; } }catch(e){} }
+  let learnedAvg = null;
+  const simWindow = [];
+  let lastFrameTime = 0;
 
-btnStart.onclick = async ()=>{
-  if(listening) return;
-  try{
-    ctx = new (window.AudioContext||window.webkitAudioContext)();
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false }
-    });
-    mic = ctx.createMediaStreamSource(stream);
-    analyser = ctx.createAnalyser();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.4;
-    mic.connect(analyser);
-    listening=true; btnStart.disabled=true; btnStop.disabled=false;
-    log('Listening started');
-    await requestWakeLock();
-    loop();
-  }catch(e){ log('Mic error: '+e.message); }
-};
-
-btnStop.onclick = async ()=>{
-  listening=false; btnStart.disabled=false; btnStop.disabled=true;
-  try{ stream && stream.getTracks().forEach(t=>t.stop()); }catch(e){}
-  try{ ctx && ctx.close(); }catch(e){}
-  await releaseWakeLock();
-  log('Stopped');
-};
-
-btnLearn.onclick = ()=>{
-  if(!analyser){ log('Start listening first.'); return; }
-  log('Learning ~3s… play ONE full alert now.');
-  const frames = [];
-  const start = performance.now();
-  (function collect(){
-    const f = new Float32Array(analyser.frequencyBinCount);
-    analyser.getFloatFrequencyData(f);
-    for(let i=0;i<f.length;i++) f[i] = toLinear(f[i]);
-    frames.push( normalize(f) );
-    if(performance.now() - start < LEARN_MS){
-      setTimeout(collect, FRAME_MS);
-    } else {
-      // average spectrum over the 3s sample
-      const avgSpec = new Float32Array(frames[0].length);
-      for(let i=0;i<avgSpec.length;i++){
-        let s=0; for(const fr of frames) s+=fr[i];
-        avgSpec[i]=s/frames.length;
+  async function requestWakeLock() {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLock = await navigator.wakeLock.request('screen');
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
       }
-      learnedAvg = normalize(avgSpec);
-      log(`Tone learned (~${(frames.length*FRAME_MS/1000).toFixed(1)}s, ${frames.length} frames).`);
-      // reset rolling window
-      simWindow.length = 0;
+    } catch (err) {
+      log(`Wake lock unavailable: ${err.message}`);
     }
-  })();
-};
-
-btnTest.onclick = ()=>{ log('Test fired'); sendWebhook(); };
-
-function loop(){
-  if(!listening) return;
-  const now = performance.now();
-  if(now - lastTick < FRAME_MS){ return requestAnimationFrame(loop); }
-  lastTick = now;
-
-  const buf = new Float32Array(analyser.frequencyBinCount);
-  analyser.getFloatFrequencyData(buf);
-  for(let i=0;i<buf.length;i++) buf[i] = toLinear(buf[i]);
-  const spec = normalize(buf);
-
-  // energy gate to ignore low-level noise
-  let energy=0; for(let i=0;i<spec.length;i++) energy+=spec[i]; energy/=spec.length;
-  if(energy < MIN_ENERGY){
-    simWindow.push(0);
-  } else if(learnedAvg){
-    const sim = cosSim(spec, learnedAvg);
-    simWindow.push(sim);
-  } else {
-    simWindow.push(0);
   }
 
-  if(simWindow.length > MAX_WINDOW) simWindow.shift();
-
-  // sustained threshold: base very strict, slider can loosen slightly
-  const ease = parseFloat(sensEl.value);        // 0.02..0.5
-  const threshold = 0.96 - (ease * 0.20);       // default ~0.96; loosest ~0.86
-  const winAvg = avg(simWindow);
-
-  if(!cooldown && learnedAvg && winAvg >= threshold){
-    log(`MATCH sustained avg=${winAvg.toFixed(3)} (thr=${threshold.toFixed(3)})`);
-    cooldown = true; listening = false;
-    sendWebhook();
-    setTimeout(()=>{ cooldown=false; listening=true; simWindow.length=0; log('Resumed'); }, 2500);
+  async function releaseWakeLock() {
+    if (wakeLock) {
+      try {
+        await wakeLock.release();
+      } catch (err) {
+        // ignore
+      }
+      wakeLock = null;
+    }
   }
 
-  requestAnimationFrame(loop);
-}
+  function toLinear(dbArray) {
+    const result = new Float32Array(dbArray.length);
+    for (let i = 0; i < dbArray.length; i++) {
+      result[i] = Math.max(0, (dbArray[i] + 140) / 140);
+    }
+    return result;
+  }
+
+  function normalize(array) {
+    const out = new Float32Array(array.length);
+    let max = 0;
+    for (let i = 0; i < array.length; i++) {
+      if (array[i] > max) max = array[i];
+    }
+    if (max === 0) max = 1;
+    for (let i = 0; i < array.length; i++) {
+      out[i] = array[i] / max;
+    }
+    return out;
+  }
+
+  function cosineSimilarity(a, b) {
+    let dot = 0;
+    let magA = 0;
+    let magB = 0;
+    for (let i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      magA += a[i] * a[i];
+      magB += b[i] * b[i];
+    }
+    const denom = Math.sqrt(magA) * Math.sqrt(magB) + 1e-9;
+    return dot / denom;
+  }
+
+  function rollingAverage(values) {
+    if (!values.length) return 0;
+    let sum = 0;
+    for (const v of values) sum += v;
+    return sum / values.length;
+  }
+
+  async function populateDevices() {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices.filter(d => d.kind === 'audioinput');
+      if (!inputs.length) {
+        log('No microphone devices detected.');
+        deviceField.hidden = true;
+        return;
+      }
+      deviceSelect.innerHTML = '';
+      for (const device of inputs) {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.textContent = device.label || `Microphone ${deviceSelect.length + 1}`;
+        deviceSelect.appendChild(option);
+      }
+      deviceField.hidden = inputs.length <= 1;
+    } catch (err) {
+      log(`Unable to enumerate devices: ${err.message}`);
+    }
+  }
+
+  async function startListening() {
+    if (running) return;
+
+    try {
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      ctx = new AudioContextCtor();
+      await ctx.resume();
+
+      const constraints = {
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        }
+      };
+
+      const deviceId = deviceSelect.value;
+      if (deviceId) {
+        constraints.audio.deviceId = { exact: deviceId };
+      }
+
+      mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      mediaSource = ctx.createMediaStreamSource(mediaStream);
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.4;
+      mediaSource.connect(analyser);
+
+      await populateDevices();
+
+      running = true;
+      detectionEnabled = true;
+      simWindow.length = 0;
+      lastFrameTime = 0;
+
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+
+      setStatus('listening', 'Listening');
+      log('Listening…');
+      await requestWakeLock();
+      loop();
+    } catch (err) {
+      log(`Mic error: ${err.message}`);
+      setStatus('error', 'Mic Error');
+      await cleanup();
+    }
+  }
+
+  async function cleanup() {
+    running = false;
+    detectionEnabled = false;
+    if (cooldownTimer) {
+      clearTimeout(cooldownTimer);
+      cooldownTimer = null;
+    }
+    if (mediaStream) {
+      for (const track of mediaStream.getTracks()) {
+        try { track.stop(); } catch (_) {}
+      }
+    }
+    mediaStream = null;
+    mediaSource = null;
+    analyser = null;
+    if (ctx) {
+      try { await ctx.close(); } catch (_) {}
+      ctx = null;
+    }
+    await releaseWakeLock();
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+  }
+
+  async function stopListening() {
+    await cleanup();
+    setStatus('stopped', 'Stopped');
+    log('Stopped.');
+  }
+
+  function triggerLocalAlert() {
+    if ('vibrate' in navigator) {
+      navigator.vibrate([220, 80, 200, 80, 360]);
+    }
+    playBeep();
+  }
+
+  function playBeep() {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    const activeCtx = (ctx && ctx.state !== 'closed') ? ctx : new AudioContextCtor();
+    const osc = activeCtx.createOscillator();
+    const gain = activeCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    gain.gain.value = 0.0001;
+    osc.connect(gain);
+    gain.connect(activeCtx.destination);
+    const now = activeCtx.currentTime;
+    osc.start(now);
+    gain.gain.linearRampToValueAtTime(0.85, now + 0.02);
+    gain.gain.linearRampToValueAtTime(0.0001, now + 0.7);
+    osc.stop(now + 0.72);
+    if (activeCtx !== ctx) {
+      osc.addEventListener('ended', () => {
+        try { activeCtx.close(); } catch (_) {}
+      });
+    }
+  }
+
+  async function sendWebhook(reason) {
+    const url = webhookInput.value.trim();
+    if (!url) {
+      log(`${reason}: webhook skipped (empty URL).`);
+      return;
+    }
+    try {
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          value1: 'MDC tone detected',
+          t: new Date().toISOString(),
+          reason
+        })
+      });
+      log('Webhook sent.');
+    } catch (err) {
+      log(`Webhook error: ${err.message}`);
+    }
+  }
+
+  function learnToneSample() {
+    if (!analyser) {
+      log('Start listening before recording the tone sample.');
+      return;
+    }
+    log('Learning tone… play one full ~3s alert now.');
+    const frames = [];
+    const start = performance.now();
+
+    (function collect() {
+      const freq = new Float32Array(analyser.frequencyBinCount);
+      analyser.getFloatFrequencyData(freq);
+      const linear = toLinear(freq);
+      frames.push(normalize(linear));
+      if (performance.now() - start < LEARN_MS) {
+        setTimeout(collect, FRAME_MS);
+      } else {
+        if (!frames.length) {
+          log('Learning failed: no frames captured.');
+          return;
+        }
+        const avgSpectrum = new Float32Array(frames[0].length);
+        for (let bin = 0; bin < avgSpectrum.length; bin++) {
+          let sum = 0;
+          for (const frame of frames) {
+            sum += frame[bin];
+          }
+          avgSpectrum[bin] = sum / frames.length;
+        }
+        learnedAvg = normalize(avgSpectrum);
+        simWindow.length = 0;
+        log(`Tone learned (~${(frames.length * FRAME_MS / 1000).toFixed(1)}s, ${frames.length} frames).`);
+      }
+    })();
+  }
+
+  function loop() {
+    if (!running || !analyser) return;
+
+    const now = performance.now();
+    if (now - lastFrameTime < FRAME_MS) {
+      requestAnimationFrame(loop);
+      return;
+    }
+    lastFrameTime = now;
+
+    const freq = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(freq);
+    const linear = toLinear(freq);
+    const spectrum = normalize(linear);
+
+    let energy = 0;
+    for (let i = 0; i < spectrum.length; i++) {
+      energy += spectrum[i];
+    }
+    energy /= spectrum.length;
+
+    let similarity = 0;
+    if (energy >= MIN_ENERGY && learnedAvg && detectionEnabled) {
+      similarity = cosineSimilarity(spectrum, learnedAvg);
+    }
+
+    simWindow.push(similarity);
+    if (simWindow.length > MAX_WINDOW) {
+      simWindow.shift();
+    }
+
+    const ease = parseFloat(sensSlider.value);
+    const threshold = BASE_THRESHOLD - (ease * 0.20);
+    const windowAverage = rollingAverage(simWindow);
+
+    if (detectionEnabled && learnedAvg && windowAverage >= threshold) {
+      detectionEnabled = false;
+      setStatus('alert', 'Alert');
+      log(`MATCH sustained avg=${windowAverage.toFixed(3)} (thr=${threshold.toFixed(3)})`);
+      triggerLocalAlert();
+      sendWebhook('alert-match');
+      simWindow.length = 0;
+      cooldownTimer = setTimeout(() => {
+        detectionEnabled = running;
+        if (running) {
+          setStatus('listening', 'Listening');
+          log('Cooldown ended — listening.');
+        }
+      }, 2500);
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  testBtn.addEventListener('click', () => {
+    triggerLocalAlert();
+    log('Test alert triggered.');
+    sendWebhook('test-button');
+  });
+
+  learnBtn.addEventListener('click', learnToneSample);
+  startBtn.addEventListener('click', startListening);
+  stopBtn.addEventListener('click', stopListening);
+
+  if (navigator.mediaDevices?.addEventListener) {
+    navigator.mediaDevices.addEventListener('devicechange', populateDevices);
+  }
+
+  log('Status: idle. Paste webhook URL, then Start Listening.');
+})();
 </script>
 </body>
 </html>
-
