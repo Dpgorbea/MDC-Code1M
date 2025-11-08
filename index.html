@@ -1,0 +1,104 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>MDC Tone Watcher</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{font-family:system-ui,Segoe UI,Roboto;margin:16px}
+  button{padding:12px 16px;margin:6px 8px 6px 0}
+  #log{white-space:pre-wrap;background:#111;color:#0f0;padding:10px;border-radius:6px;min-height:96px}
+</style>
+</head>
+<body>
+<h2>MDC Tone Watcher</h2>
+<p>Allow mic. Tap <b>Start Listening</b>, then <b>Record Tone Sample (learn)</b> once. Keep this tab visible.</p>
+<button id="start">Start Listening</button>
+<button id="stop" disabled>Stop</button>
+<button id="learn">Record Tone Sample (learn)</button>
+<button id="test">Test Alert</button>
+<label style="display:block;margin-top:8px">Sensitivity
+  <input id="sens" type="range" min="0.02" max="0.5" step="0.01" value="0.12">
+</label>
+<div id="log">Status: idle</div>
+
+<script>
+const WEBHOOK_URL = 'https://maker.ifttt.com/trigger/MDC_Call_Alert/with/key/cSJ4VM9aezFFbRFOgHGDv4';
+const logEl = document.getElementById('log');
+const sens = document.getElementById('sens');
+const btnStart = document.getElementById('start');
+const btnStop = document.getElementById('stop');
+const btnLearn = document.getElementById('learn');
+const btnTest = document.getElementById('test');
+
+let ctx, analyser, mic, data, listening=false, learned=null, wakeLock=null;
+const log = s => logEl.textContent = new Date().toLocaleTimeString()+" — "+s+"\n"+logEl.textContent;
+
+async function wake(on){
+  try{
+    if(on && 'wakeLock' in navigator){ wakeLock = await navigator.wakeLock.request('screen'); log('WakeLock ON'); }
+    if(!on && wakeLock){ await wakeLock.release(); wakeLock=null; log('WakeLock OFF'); }
+  }catch(e){ log('WakeLock err: '+e.message); }
+}
+
+function beep(){
+  navigator.vibrate && navigator.vibrate([200,80,200,80,400]);
+  const ac=new (window.AudioContext||window.webkitAudioContext)(), o=ac.createOscillator(), g=ac.createGain();
+  o.connect(g); g.connect(ac.destination); o.type='sine'; o.frequency.value=880; g.gain.value=0.0001;
+  o.start(); g.gain.linearRampToValueAtTime(0.8, ac.currentTime+0.02); g.gain.linearRampToValueAtTime(0.0001, ac.currentTime+0.6); o.stop(ac.currentTime+0.7);
+}
+async function webhook(){
+  if(!WEBHOOK_URL) return log('No webhook set (local alert only).');
+  try{ await fetch(WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({value1:'MDC tone detected',t:new Date().toISOString()})}); log('Webhook sent'); }
+  catch(e){ log('Webhook failed: '+e.message); }
+}
+function toLinear(db){ return Math.max(0,(db+140)/140); }
+function normalize(arr){ const out=new Float32Array(arr.length); let m=0; for(let i=0;i<arr.length;i++){ if(arr[i]>m)m=arr[i]; } if(m===0)m=1; for(let i=0;i<arr.length;i++) out[i]=arr[i]/m; return out; }
+function cosSim(a,b){ let d=0,na=0,nb=0; for(let i=0;i<a.length;i++){ d+=a[i]*b[i]; na+=a[i]*a[i]; nb+=b[i]*b[i]; } return d/(Math.sqrt(na)*Math.sqrt(nb)+1e-9); }
+
+function loop(){
+  if(!listening) return;
+  const buf=new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(buf);
+  for(let i=0;i<buf.length;i++) buf[i]=toLinear(buf[i]);
+  const spec=normalize(buf);
+  if(learned){
+    const sim=cosSim(spec, learned);
+    const thresh = 1 - parseFloat(sens.value); // move slider right to make it easier
+    if(sim>thresh){ log('MATCH sim='+sim.toFixed(3)); beep(); webhook(); listening=false; setTimeout(()=>{listening=true; log('Resumed'); loop();},3000); return; }
+  }else{
+    // crude loudness fallback
+    let peak=0; for(let i=0;i<spec.length;i++) if(spec[i]>peak) peak=spec[i];
+    if(peak>0.75){ log('Loud event peak='+peak.toFixed(2)); beep(); webhook(); listening=false; setTimeout(()=>{listening=true; log('Resumed'); loop();},3000); return; }
+  }
+  requestAnimationFrame(loop);
+}
+
+btnStart.onclick = async ()=>{
+  if(listening) return;
+  try{
+    ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const stream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1}});
+    mic = ctx.createMediaStreamSource(stream);
+    analyser = ctx.createAnalyser(); analyser.fftSize=2048; analyser.smoothingTimeConstant=0.4;
+    mic.connect(analyser); data=new Float32Array(analyser.frequencyBinCount);
+    listening=true; btnStart.disabled=true; btnStop.disabled=false; log('Listening…'); await wake(true); loop();
+  }catch(e){ log('Mic error: '+e.message); }
+};
+btnStop.onclick = async ()=>{ listening=false; btnStart.disabled=false; btnStop.disabled=true; await wake(false); log('Stopped'); };
+btnLearn.onclick = ()=>{
+  if(!analyser) return log('Start listening first.');
+  log('Learning… play a single clean alert near mic (≈1s).');
+  const frames=[], take=()=>{
+    const f=new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(f); for(let i=0;i<f.length;i++) f[i]=toLinear(f[i]);
+    frames.push(f); if(frames.length<12) return setTimeout(take,80);
+    const avg=new Float32Array(frames[0].length);
+    for(let i=0;i<avg.length;i++){ let s=0; for(const fr of frames) s+=fr[i]; avg[i]=s/frames.length; }
+    learned=normalize(avg); log('Tone learned.');
+  }; take();
+};
+btnTest.onclick = ()=>{ beep(); webhook(); log('Test fired'); };
+</script>
+</body>
+</html>
